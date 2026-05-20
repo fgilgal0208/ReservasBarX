@@ -6,7 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\Reserva;
 use Illuminate\Support\Facades\Log;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Carbon\Carbon; // IMPORTANTE: Para manejar las semanas
+use Carbon\Carbon;
 
 class ReservaController extends Controller
 {
@@ -23,7 +23,6 @@ class ReservaController extends Controller
                 'end'   => $reserva->fecha_salida->format('Y-m-d'),
                 'color' => $reserva->origen === 'Booking' ? '#0ea5e9' : '#10b981', 
                 'allDay' => true,
-                // Guardamos toda la información extra para mostrarla al hacer clic
                 'extendedProps' => [
                     'huesped' => $reserva->nombre_huesped,
                     'habitacion' => $reserva->habitacion,
@@ -32,6 +31,9 @@ class ReservaController extends Controller
                     'email' => $reserva->email,
                     'observaciones' => $reserva->observaciones,
                     'origen' => $reserva->origen,
+                    // Añadimos las fechas en formato crudo para el formulario de edición
+                    'raw_start' => $reserva->fecha_entrada->format('Y-m-d'),
+                    'raw_end' => $reserva->fecha_salida->format('Y-m-d'),
                 ]
             ];
         }
@@ -62,6 +64,40 @@ class ReservaController extends Controller
         }
     }
 
+    // NUEVO MÉTODO: Actualizar Reserva
+    public function update(Request $request, Reserva $reserva)
+    {
+        $validated = $request->validate([
+            'nombre_huesped' => 'required|string|max:255',
+            'fecha_entrada'  => 'required|date',
+            'fecha_salida'   => 'required|date|after:fecha_entrada',
+            'habitacion'     => 'required|string|max:255',
+            'precio'         => 'nullable|numeric',
+            'telefono'       => 'nullable|string|max:50',
+            'observaciones'  => 'nullable|string',
+        ]);
+
+        try {
+            $reserva->update($validated);
+            return redirect()->route('reservas.index')->with('success', '¡Reserva actualizada correctamente!');
+        } catch (\Exception $e) {
+            Log::error('Error al actualizar reserva: ' . $e->getMessage());
+            return redirect()->route('reservas.index')->with('error', 'Hubo un error al actualizar la reserva.');
+        }
+    }
+
+    // NUEVO MÉTODO: Eliminar Reserva
+    public function destroy(Reserva $reserva)
+    {
+        try {
+            $reserva->delete();
+            return redirect()->route('reservas.index')->with('success', '¡Reserva eliminada con éxito!');
+        } catch (\Exception $e) {
+            Log::error('Error al eliminar reserva: ' . $e->getMessage());
+            return redirect()->route('reservas.index')->with('error', 'No se pudo eliminar la reserva.');
+        }
+    }
+
     public function receiveWebhook(Request $request)
     {
         $validated = $request->validate([
@@ -78,13 +114,7 @@ class ReservaController extends Controller
         try {
             $validated['origen'] = 'Booking';
             $reserva = Reserva::create($validated);
-
-            return response()->json([
-                'status'  => 'success',
-                'message' => 'Reserva registrada.',
-                'id'      => $reserva->id
-            ], 201);
-
+            return response()->json(['status' => 'success', 'message' => 'Reserva registrada.', 'id' => $reserva->id], 201);
         } catch (\Exception $e) {
             Log::error('Error webhook Booking: ' . $e->getMessage());
             return response()->json(['status' => 'error'], 500);
@@ -94,14 +124,10 @@ class ReservaController extends Controller
     public function exportarPDF(Request $request)
     {
         try {
-            // Recogemos la fecha seleccionada o usamos la de hoy por defecto
             $fechaBase = $request->query('fecha', now()->format('Y-m-d'));
-            
-            // Calculamos el Lunes y el Domingo de esa semana
             $inicioSemana = Carbon::parse($fechaBase)->startOfWeek();
             $finSemana = Carbon::parse($fechaBase)->endOfWeek();
 
-            // Buscamos las reservas que se crucen con esa semana
             $reservas = Reserva::where('fecha_entrada', '<=', $finSemana)
                                ->where('fecha_salida', '>=', $inicioSemana)
                                ->orderBy('fecha_entrada', 'asc')
@@ -109,7 +135,6 @@ class ReservaController extends Controller
 
             $pdf = Pdf::loadView('pdf.reservas', compact('reservas', 'inicioSemana', 'finSemana'));
             return $pdf->stream('semana-' . $inicioSemana->format('d-m-Y') . '.pdf');
-
         } catch (\Exception $e) {
             Log::error('Error al generar PDF: ' . $e->getMessage());
             return back()->with('error', 'Error al generar el PDF.');
