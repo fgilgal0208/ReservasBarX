@@ -140,4 +140,15 @@ class ReservaController extends Controller
             return back()->with('error', 'Error al generar el PDF.');
         }
     }
+    public function mover(Request $request, $id)
+{
+    $reserva = \App\Models\Reserva::findOrFail($id);
+    
+    $reserva->update([
+        'fecha_entrada' => $request->fecha_entrada,
+        'fecha_salida' => $request->fecha_salida,
+    ]);
+
+    return response()->json(['success' => true]);
+}
 }

@@ -24,5 +24,7 @@ Route::middleware('auth')->group(function () {
 
     // Exportar PDF
     Route::get('/reservas/pdf', [ReservaController::class, 'exportarPDF'])->name('reservas.pdf');
+
+    Route::post('/reservas/{id}/mover', [App\Http\Controllers\ReservaController::class, 'mover'])->name('reservas.mover');
     
 });
